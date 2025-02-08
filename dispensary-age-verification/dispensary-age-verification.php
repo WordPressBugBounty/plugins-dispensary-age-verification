@@ -12,7 +12,7 @@
  * Plugin Name:       Age Verification
  * Plugin URI:        https://www.deviodigital.com
  * Description:       Check a visitors age before allowing them to view your website. Brought to you by <a href="https://www.deviodigital.com/" target="_blank">Devio Digital</a>
- * Version:           2.9.6
+ * Version:           3.0.0
  * Author:            Devio Digital
  * Author URI:        https://www.deviodigital.com
  * License:           GPL-2.0+
@@ -26,7 +26,7 @@ if ( ! defined( 'WPINC' ) ) {
     wp_die();
 }
 
-require 'plugin-update-checker/plugin-update-checker.php';
+require 'vendor/plugin-update-checker/plugin-update-checker.php';
 use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
 
 $myUpdateChecker = PucFactory::buildUpdateChecker(
@@ -39,15 +39,25 @@ $myUpdateChecker = PucFactory::buildUpdateChecker(
 $myUpdateChecker->setBranch( 'main' );
 
 // Current plugin version.
-define( 'AVWP_VERSION', '2.9.6' );
+define( 'AVWP_VERSION', '3.0.0' );
 
 // Plugin folder name.
 $pluginname = plugin_basename( __FILE__ );
+
+// Check if Composer's autoloader is already registered globally.
+if ( ! class_exists( 'RobertDevore\WPComCheck\WPComPluginHandler' ) ) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
+
+use RobertDevore\WPComCheck\WPComPluginHandler;
+
+new WPComPluginHandler( plugin_basename( __FILE__ ), 'https://robertdevore.com/why-this-plugin-doesnt-support-wordpress-com-hosting/' );
 
 /**
  * The code that runs during plugin activation.
  * This action is documented in includes/class-dispensary-age-verification-activator.php
  * 
+ * @since  1.0.0
  * @return void
  */
 function avwp_activate() {
@@ -59,6 +69,7 @@ function avwp_activate() {
  * The code that runs during plugin deactivation.
  * This action is documented in includes/class-dispensary-age-verification-deactivator.php
  * 
+ * @since  1.0.0
  * @return void
  */
 function avwp_deactivate() {
@@ -188,16 +199,19 @@ add_action( 'admin_notices', 'avwp_custom_update_notice' );
  * @return void
  */
 function avwp_custom_update_notice_scripts() {
-    wp_enqueue_script( 'avwp-custom-notice-dismiss', plugin_dir_url( __FILE__ ) . 'public/js/custom-notice-dismiss.js', array( 'jquery' ), false, true );
-    wp_localize_script( 'avwp-custom-notice-dismiss', 'custom_notice', array(
+    wp_enqueue_script( 'avwp-custom-notice-dismiss', plugin_dir_url( __FILE__ ) . 'public/js/custom-notice-dismiss.js', [ 'jquery' ], false, true );
+    wp_localize_script( 'avwp-custom-notice-dismiss', 'custom_notice', [
         'ajax_url' => admin_url( 'admin-ajax.php' ),
         'nonce'    => wp_create_nonce( 'avwp_custom_notice_dismiss_nonce' ),
-    ) );
+    ] );
 }
 add_action( 'admin_enqueue_scripts', 'avwp_custom_update_notice_scripts' );
 
 /**
  * AJAX handler to mark the notice as dismissed.
+ * 
+ * @since  2.9.5
+ * @return void
  */
 function avwp_custom_dismiss_update_notice() {
     check_ajax_referer( 'avwp_custom_notice_dismiss_nonce', 'nonce' );
@@ -205,113 +219,3 @@ function avwp_custom_dismiss_update_notice() {
     wp_send_json_success();
 }
 add_action( 'wp_ajax_avwp_custom_dismiss_update_notice', 'avwp_custom_dismiss_update_notice' );
-
-/**
- * Helper function to handle WordPress.com environment checks.
- *
- * @param string $plugin_slug     The plugin slug.
- * @param string $learn_more_link The link to more information.
- * 
- * @since  2.9.6
- * @return bool
- */
-function wp_com_plugin_check( $plugin_slug, $learn_more_link ) {
-    // Check if the site is hosted on WordPress.com.
-    if ( defined( 'IS_WPCOM' ) && IS_WPCOM ) {
-        // Ensure the deactivate_plugins function is available.
-        if ( ! function_exists( 'deactivate_plugins' ) ) {
-            require_once ABSPATH . 'wp-admin/includes/plugin.php';
-        }
-
-        // Deactivate the plugin if in the admin area.
-        if ( is_admin() ) {
-            deactivate_plugins( $plugin_slug );
-
-            // Add a deactivation notice for later display.
-            add_option( 'wpcom_deactivation_notice', $learn_more_link );
-
-            // Prevent further execution.
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/**
- * Auto-deactivate the plugin if running in an unsupported environment.
- *
- * @since  2.9.6
- * @return void
- */
-function wpcom_auto_deactivation() {
-    if ( wp_com_plugin_check( plugin_basename( __FILE__ ), 'https://robertdevore.com/why-this-plugin-doesnt-support-wordpress-com-hosting/' ) ) {
-        return; // Stop execution if deactivated.
-    }
-}
-add_action( 'plugins_loaded', 'wpcom_auto_deactivation' );
-
-/**
- * Display an admin notice if the plugin was deactivated due to hosting restrictions.
- *
- * @since  2.9.6
- * @return void
- */
-function wpcom_admin_notice() {
-    $notice_link = get_option( 'wpcom_deactivation_notice' );
-    if ( $notice_link ) {
-        ?>
-        <div class="notice notice-error">
-            <p>
-                <?php
-                echo wp_kses_post(
-                    sprintf(
-                        __( 'My Plugin has been deactivated because it cannot be used on WordPress.com-hosted websites. %s', 'dispensary-age-verification' ),
-                        '<a href="' . esc_url( $notice_link ) . '" target="_blank" rel="noopener">' . __( 'Learn more', 'dispensary-age-verification' ) . '</a>'
-                    )
-                );
-                ?>
-            </p>
-        </div>
-        <?php
-        delete_option( 'wpcom_deactivation_notice' );
-    }
-}
-add_action( 'admin_notices', 'wpcom_admin_notice' );
-
-/**
- * Prevent plugin activation on WordPress.com-hosted sites.
- *
- * @since  2.9.6
- * @return void
- */
-function wpcom_activation_check() {
-    if ( wp_com_plugin_check( plugin_basename( __FILE__ ), 'https://robertdevore.com/why-this-plugin-doesnt-support-wordpress-com-hosting/' ) ) {
-        // Display an error message and stop activation.
-        wp_die(
-            wp_kses_post(
-                sprintf(
-                    '<h1>%s</h1><p>%s</p><p><a href="%s" target="_blank" rel="noopener">%s</a></p>',
-                    __( 'Plugin Activation Blocked', 'dispensary-age-verification' ),
-                    __( 'This plugin cannot be activated on WordPress.com-hosted websites. It is restricted due to concerns about WordPress.com policies impacting the community.', 'dispensary-age-verification' ),
-                    esc_url( 'https://robertdevore.com/why-this-plugin-doesnt-support-wordpress-com-hosting/' ),
-                    __( 'Learn more', 'dispensary-age-verification' )
-                )
-            ),
-            esc_html__( 'Plugin Activation Blocked', 'dispensary-age-verification' ),
-            [ 'back_link' => true ]
-        );
-    }
-}
-register_activation_hook( __FILE__, 'wpcom_activation_check' );
-
-/**
- * Add a deactivation flag when the plugin is deactivated.
- *
- * @since  2.9.6
- * @return void
- */
-function wpcom_deactivation_flag() {
-    add_option( 'wpcom_deactivation_notice', 'https://robertdevore.com/why-this-plugin-doesnt-support-wordpress-com-hosting/' );
-}
-register_deactivation_hook( __FILE__, 'wpcom_deactivation_flag' );
